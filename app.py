@@ -7,8 +7,6 @@ from fake_useragent import UserAgent
 from tqdm import tqdm
 import asyncio
 import uvicorn
-from telegram import Bot
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
 # Create a FastAPI app
 app = FastAPI()
@@ -21,7 +19,6 @@ async def start_scraping(
     api_hash: str = Form(...),
     account_api_ids: str = Form(None),  # Optional, comma-separated API IDs
     account_api_hashes: str = Form(None),  # Optional, comma-separated API hashes
-    bot_token: str = Form(...),  # Telegram Bot Token
     phone_number: str = Form(...)  # Phone number for verification
 ):
     try:
@@ -44,20 +41,19 @@ async def start_scraping(
 
         client = TelegramClient('anon', current_account['api_id'], current_account['api_hash'])
 
-        # --- Automatic Verification with Telegram Bot ---
-        bot = Bot(token=bot_token)
-
+        # --- Automatic Verification with Telethon Events ---
         async def verification_handler(event):
             if event.message.text.startswith("Verification code:"):
                 code = event.message.text.split(":")[1].strip()
                 await client.sign_in(phone=phone_number, code=code)
-                await event.message.reply("Verification successful!")
+                print("Verification successful!")
 
-        client.add_event_handler(verification_handler, events.NewMessage(from_users=bot.id))
+        client.add_event_handler(verification_handler, events.NewMessage)  # Listen for all new messages
 
         if not await client.is_user_authorized():
             await client.sign_in(phone=phone_number)
-            await bot.send_message(chat_id=phone_number, text="Please send the verification code here.")
+            print("Please enter the verification code you received:")
+            # You'll need to manually enter the code here
 
         await client.start()
 
@@ -87,6 +83,7 @@ async def start_scraping(
             for participant in participants:
                 try:
                     # --- User Agent Camouflage ---
+                    ua = UserAgent()
                     headers = {'User-Agent': ua.random}
                     await client(InviteToChannelRequest(target_group, [participant]), headers=headers)
 
