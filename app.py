@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Form, BackgroundTasks
 from telethon import TelegramClient, events
 from telethon.tl.functions.channels import InviteToChannelRequest
 from telethon.tl.types import InputPeerEmpty
-from telethon.errors.rpcerrorlist import PeerFloodError, UserPrivacyRestrictedError
+from telethon.errors.rpcerrorlist import PeerFloodError, UserPrivacyRestrictedError, FloodWaitError
 from fake_useragent import UserAgent
 from tqdm import tqdm
 import asyncio
@@ -10,7 +10,6 @@ import uvicorn
 import random
 from telethon.tl.functions.channels import GetParticipantsRequest
 from telethon.tl.types import ChannelParticipantsSearch
-
 
 # Create a FastAPI app
 app = FastAPI()
@@ -28,6 +27,7 @@ async def start_scraping(
     account_api_hashes: str = Form(None),  # Optional, comma-separated API hashes
     phone_number: str = Form(...)  # Phone number for verification
 ):
+    global verification_code
     try:
         # --- Account Processing (Optional Multi-Account) ---
         if account_api_ids and account_api_hashes:
@@ -48,30 +48,40 @@ async def start_scraping(
 
         client = TelegramClient('anon', current_account['api_id'], current_account['api_hash'])
 
-
         # --- Manual Verification ---
         async def verification_handler(event):
             global verification_code
             if event.message.text.startswith("Verification code:"):
                 verification_code = event.message.text.split(":")[1].strip()
                 print("Verification code received:", verification_code)
-                # You'll need to manually enter the code here
 
-        client.add_event_handler(verification_handler, events.NewMessage)  # Listen for all new messages
+        client.add_event_handler(verification_handler, events.NewMessage)
 
         if not await client.is_user_authorized():
             await client.sign_in(phone=phone_number)
-            print("Please enter the verification code you received:")
-            # Wait for the user to input the verification code
+            print("Waiting for verification code...")
             while verification_code is None:
-                await asyncio.sleep(1)  # Check every second
-            await client.sign_in(phone=phone_number, code=verification_code)
+                await asyncio.sleep(1)
+            try:
+                await client.sign_in(phone=phone_number, code=verification_code)
+            except Exception as e:
+                print(f"Sign-in error: {e}")
+                raise HTTPException(status_code=400, detail=f"Sign-in failed: {e}")
 
-        await client.start()
+        print("Client started")
 
         # --- Get the source and target groups ---
-        source_group = await client.get_entity(source_group_username)
-        target_group = await client.get_entity(target_group_username)
+        try:
+            source_group = await client.get_entity(source_group_username)
+            target_group = await client.get_entity(target_group_username)
+        except ValueError as e:
+            print(f"Error getting groups: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid group username: {e}")
+        except Exception as e:
+            print(f"Unexpected error getting groups: {e}")
+            raise HTTPException(status_code=500, detail="Failed to get groups.")
+
+        print("Groups retrieved")
 
         # --- Scrape Members ---
         participants = []
@@ -79,18 +89,30 @@ async def start_scraping(
         limit = 100  # Number of members to fetch per request
 
         while True:
-            result = await client(GetParticipantsRequest(
-                source_group, ChannelParticipantsSearch(''), offset, limit, hash=0
-            ))
-            participants.extend(result.users)
-            offset += len(result.users)
+            try:
+                result = await client(GetParticipantsRequest(
+                    source_group, ChannelParticipantsSearch(''), offset, limit, hash=0
+                ))
+                participants.extend(result.users)
+                offset += len(result.users)
 
-            if not result.users:
-                break
+                if not result.users:
+                    break
 
-            time.sleep(random.randint(1, 3))
+                time.sleep(random.randint(1, 3))
+            except FloodWaitError as e:
+                print(f"Flood wait error: {e}")
+                wait_time = e.seconds
+                print(f"Waiting for {wait_time} seconds...")
+                time.sleep(wait_time)
+            except Exception as e:
+                print(f"Error scraping members: {e}")
+                raise HTTPException(status_code=500, detail="Failed to scrape members.")
+
+        print(f"Found {len(participants)} members in {source_group_username}")
 
         # --- Add Members to Target Group ---
+        added_count = 0  
         with tqdm(total=len(participants), desc="Adding Members", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]") as pbar:
             for participant in participants:
                 try:
@@ -98,7 +120,7 @@ async def start_scraping(
                     ua = UserAgent()
                     headers = {'User-Agent': ua.random}
                     await client(InviteToChannelRequest(target_group, [participant]), headers=headers)
-
+                    added_count += 1  
                     print(f'Added {participant.username} to {target_group_username}')
 
                     # --- Longer Delays ---
@@ -124,7 +146,7 @@ async def start_scraping(
                     pbar.update(1)  # Update the progress bar even if skipping
 
                 except Exception as e:
-                    print(f'Error adding {participant.username}: {e}')
+                    print(f'Error adding {participant.username} to group {target_group_username}: {e}')
 
                     # If we encounter an error, wait for a longer period
                     delay = random.randint(60, 120)
@@ -134,9 +156,10 @@ async def start_scraping(
 
         await client.disconnect()
 
-        return {"message": "Scraping and adding members completed!"}
+        return {"message": f"Scraping and adding members completed! Added {added_count} members."}
 
     except Exception as e:
+        print(f"A general error occurred: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
