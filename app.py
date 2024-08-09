@@ -8,6 +8,7 @@ from tqdm import tqdm
 import asyncio
 import uvicorn
 import random
+import time
 from telethon.tl.functions.channels import GetParticipantsRequest
 from telethon.tl.types import ChannelParticipantsSearch
 
@@ -105,7 +106,6 @@ async def scrape_and_add(client, source_group_username, target_group_username, a
 
     await client.disconnect()
     print(f"Scraping and adding members completed! Added {added_count} members.")
-
 
 @app.post("/start_scraping")
 async def start_scraping(
