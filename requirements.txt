@@ -1,6 +1,6 @@
 fastapi
 uvicorn
 telethon
-python-telegram-bot==20.0  # Or the latest version you installed
+python-telegram-bot
 fake-useragent
 tqdm
