@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Form
+from fastapi import FastAPI, HTTPException, Form, BackgroundTasks
 from telethon import TelegramClient, events
 from telethon.tl.functions.channels import InviteToChannelRequest
 from telethon.tl.types import InputPeerEmpty
@@ -7,9 +7,16 @@ from fake_useragent import UserAgent
 from tqdm import tqdm
 import asyncio
 import uvicorn
+import random
+from telethon.tl.functions.channels import GetParticipantsRequest
+from telethon.tl.types import ChannelParticipantsSearch
+
 
 # Create a FastAPI app
 app = FastAPI()
+
+# Global variable to store the verification code
+verification_code = None
 
 @app.post("/start_scraping")
 async def start_scraping(
@@ -41,19 +48,24 @@ async def start_scraping(
 
         client = TelegramClient('anon', current_account['api_id'], current_account['api_hash'])
 
-        # --- Automatic Verification with Telethon Events ---
+
+        # --- Manual Verification ---
         async def verification_handler(event):
+            global verification_code
             if event.message.text.startswith("Verification code:"):
-                code = event.message.text.split(":")[1].strip()
-                await client.sign_in(phone=phone_number, code=code)
-                print("Verification successful!")
+                verification_code = event.message.text.split(":")[1].strip()
+                print("Verification code received:", verification_code)
+                # You'll need to manually enter the code here
 
         client.add_event_handler(verification_handler, events.NewMessage)  # Listen for all new messages
 
         if not await client.is_user_authorized():
             await client.sign_in(phone=phone_number)
             print("Please enter the verification code you received:")
-            # You'll need to manually enter the code here
+            # Wait for the user to input the verification code
+            while verification_code is None:
+                await asyncio.sleep(1)  # Check every second
+            await client.sign_in(phone=phone_number, code=verification_code)
 
         await client.start()
 
