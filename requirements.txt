@@ -4,3 +4,4 @@ telethon
 python-telegram-bot
 fake-useragent
 tqdm
+python-multipart
