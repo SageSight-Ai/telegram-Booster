@@ -149,13 +149,14 @@ async def start_scraping(
         client.add_event_handler(verification_handler, events.NewMessage)
 
         await client.start()
+
         if not await client.is_user_authorized():
             await client.send_code_request(phone_number)
             return {"message": "Verification code requested. Please submit it using the form below."}
-
-        # --- Start the scraping in the background ---
-        asyncio.create_task(scrape_and_add(client, source_group_username, target_group_username, accounts))
-        return {"message": "Verification successful! Scraping process started in the background."}
+        else:
+            # --- Start the scraping in the background --- ONLY if authorized!
+            asyncio.create_task(scrape_and_add(client, source_group_username, target_group_username, accounts))
+            return {"message": "Already authorized! Scraping process started in the background."}
 
     except Exception as e:
         print(f"A general error occurred: {e}")
