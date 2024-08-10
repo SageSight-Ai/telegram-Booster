@@ -26,10 +26,10 @@ async def scrape_and_add(client, source_group_username, target_group_username, a
         target_group = await client.get_entity(target_group_username)
     except ValueError as e:
         print(f"Error getting groups: {e}")
-        # raise HTTPException(status_code=400, detail=f"Invalid group username: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid group username: {e}")
     except Exception as e:
         print(f"Unexpected error getting groups: {e}")
-        # raise HTTPException(status_code=500, detail="Failed to get groups.")
+        raise HTTPException(status_code=500, detail="Failed to get groups.")
 
     print("Groups retrieved")
 
@@ -57,7 +57,7 @@ async def scrape_and_add(client, source_group_username, target_group_username, a
             time.sleep(wait_time)
         except Exception as e:
             print(f"Error scraping members: {e}")
-            # raise HTTPException(status_code=500, detail="Failed to scrape members.")
+            raise HTTPException(status_code=500, detail="Failed to scrape members.")
 
     print(f"Found {len(participants)} members in {source_group_username}")
 
@@ -166,6 +166,7 @@ async def start_scraping(
 async def submit_verification_code(phone_number: str = Form(...), code: str = Form(...)):
     global verification_code
     try:
+        # Use the correct API ID and hash here
         client = TelegramClient('anon', api_id, api_hash)  # Create a new client
         await client.start()
         await client.sign_in(phone=phone_number, code=code)
