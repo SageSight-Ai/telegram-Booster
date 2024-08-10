@@ -26,10 +26,10 @@ async def scrape_and_add(client, source_group_username, target_group_username, a
         target_group = await client.get_entity(target_group_username)
     except ValueError as e:
         print(f"Error getting groups: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid group username: {e}")
+        # raise HTTPException(status_code=400, detail=f"Invalid group username: {e}")
     except Exception as e:
         print(f"Unexpected error getting groups: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get groups.")
+        # raise HTTPException(status_code=500, detail="Failed to get groups.")
 
     print("Groups retrieved")
 
@@ -57,7 +57,7 @@ async def scrape_and_add(client, source_group_username, target_group_username, a
             time.sleep(wait_time)
         except Exception as e:
             print(f"Error scraping members: {e}")
-            raise HTTPException(status_code=500, detail="Failed to scrape members.")
+            # raise HTTPException(status_code=500, detail="Failed to scrape members.")
 
     print(f"Found {len(participants)} members in {source_group_username}")
 
@@ -151,7 +151,7 @@ async def start_scraping(
         await client.start()
         if not await client.is_user_authorized():
             await client.send_code_request(phone_number)
-            return {"message": "Verification code requested. Please submit it using /submit_verification_code."}
+            return {"message": "Verification code requested. Please submit it using the form below."}
 
         # --- Start the scraping in the background ---
         asyncio.create_task(scrape_and_add(client, source_group_username, target_group_username, accounts))
@@ -163,13 +163,14 @@ async def start_scraping(
 
 @app.post("/submit_verification_code")
 async def submit_verification_code(phone_number: str = Form(...), code: str = Form(...)):
+    global verification_code
     try:
         client = TelegramClient('anon', api_id, api_hash)  # Create a new client
         await client.start()
-        print(f"Attempting to sign in with code: {code}")
         await client.sign_in(phone=phone_number, code=code)
+        verification_code = code  # Update the global verification code
         await client.disconnect()
-        return {"message": "Sign-in successful!"}
+        return {"message": "Sign-in successful! You can now close this window."}
     except Exception as e:
         print(f"Sign-in error: {e}")
         raise HTTPException(status_code=400, detail=f"Sign-in failed: {e}")
